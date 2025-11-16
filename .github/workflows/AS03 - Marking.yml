@@ -1,0 +1,145 @@
+name: AS03 - Test MusicFinder API
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Build and run the application
+      run: |
+        ./mvnw clean package
+        java -jar target/*.jar &
+
+    - name: Wait for application to start
+      run: sleep 10
+
+    - name: Run API tests
+      run: |
+        set -e
+    
+        echo "Testing /findMusic - Happy Path (Expected status: OK)"
+        RESPONSE=$(curl -s -o response.txt -w "%{http_code}" "http://localhost:8080/findMusic?artist=Coldplay&song=Yellow")
+        HTTP_STATUS=${RESPONSE: -3}
+        BODY=$(cat response.txt)
+        echo "Response Body: $BODY"
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "PASSED"
+        else
+          echo "FAILED: HTTP Status $HTTP_STATUS"
+          exit 1
+        fi
+        echo ""
+        echo "Testing /findMusic - Missing Parameters (Expected status: 400)"
+        RESPONSE=$(curl -s -o response.txt -w "%{http_code}" "http://localhost:8080/findMusic")
+        HTTP_STATUS=${RESPONSE: -3}
+        BODY=$(cat response.txt)
+        echo "Response Body: $BODY"
+        if [ "$HTTP_STATUS" -eq 400 ]; then
+          echo "PASSED"
+        else
+          echo "FAILED: HTTP Status $HTTP_STATUS"
+          exit 1
+        fi
+        echo ""
+        echo "Testing /findMusic/factory - Happy Path (using YouTube API - Expected status: OK)"
+        RESPONSE=$(curl -s -o response.txt -w "%{http_code}" "http://localhost:8080/findMusic/factory?artist=Coldplay&song=Yellow&provider=youtube")
+        HTTP_STATUS=${RESPONSE: -3}
+        BODY=$(cat response.txt)
+        echo "Response Body: $BODY"
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "PASSED"
+        else
+          echo "FAILED: HTTP Status $HTTP_STATUS"
+          exit 1
+        fi
+        echo ""
+        echo "Testing /findMusic/factory - Happy Path (using Lyrics API - Expected status: OK)"
+        RESPONSE=$(curl -s -o response.txt -w "%{http_code}" "http://localhost:8080/findMusic/factory?artist=Coldplay&song=Yellow&provider=lyrics")
+        HTTP_STATUS=${RESPONSE: -3}
+        BODY=$(cat response.txt)
+        echo "Response Body: $BODY"
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "PASSED"
+        else
+          echo "FAILED: HTTP Status $HTTP_STATUS"
+          exit 1
+        fi
+        echo ""
+        echo "Testing /findMusic/factory - Error (using Invalid Provider - Expected status: 500)"
+        RESPONSE=$(curl -s -o response.txt -w "%{http_code}" "http://localhost:8080/findMusic/factory?artist=Coldplay&song=Yellow&provider=invalidProvider")
+        HTTP_STATUS=${RESPONSE: -3}
+        BODY=$(cat response.txt)
+        echo "Response Body: $BODY"
+        if [ "$HTTP_STATUS" -eq 500 ]; then
+          echo "PASSED"
+        else
+          echo "FAILED: HTTP Status $HTTP_STATUS"
+          exit 1
+        fi
+        echo ""
+        echo "Testing /findMusic/decorator - Direct call using YouTube API (Cached Not Found - Expected status: Cache Miss)"
+        RESPONSE=$(curl -s "http://localhost:8080/findMusic/decorator?artist=Coldplay&song=Yellow&provider=youtube")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "FAILED: Unexpected Cache Hit" || echo "PASSED"
+        echo ""
+        echo "Testing /findMusic/decorator - Direct call using Lyrics API (Cached Not Found - Expected status: Cache Miss)"
+        RESPONSE=$(curl -s "http://localhost:8080/findMusic/decorator?artist=Coldplay&song=Fix%20You&provider=lyrics")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "FAILED: Unexpected Cache Hit" || echo "PASSED"
+        echo ""
+        echo "Testing /findMusic/decorator - Direct call using YouTube API (Cached Result - Expected status: Cache Hit)"
+        RESPONSE=$(curl -s "http://localhost:8080/findMusic/decorator?artist=Coldplay&song=Yellow&provider=youtube")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "PASSED" || echo "FAILED: Cache Miss"
+        echo ""
+        echo "Testing /findMusic/decorator - Direct call using Lyrics API (Cached Result - Expected status: Cache Hit)"
+        RESPONSE=$(curl -s "http://localhost:8080/findMusic/decorator?artist=Coldplay&song=Fix%20You&provider=lyrics")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "PASSED" || echo "FAILED: Cache Miss"
+        echo ""
+        echo "Testing /findMusic/strategy - Direct call using Exact Strategy (Cached Not Found - Expected status: Cache Miss)"
+        RESPONSE=$(curl -s "%{http_code}" "http://localhost:8080/findMusic/strategy?artist=Coldplay&song=Yellow&strategy=exact")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "FAILED: Unexpected Cache Hit" || echo "PASSED"
+        echo ""
+        echo "Testing /findMusic/strategy - Direct call using Fuzzy Strategy (Cached Not Found - Expected status: Cache Miss)"
+        RESPONSE=$(curl -s "%{http_code}" "http://localhost:8080/findMusic/strategy?artist=Coldplay&song=Fix%20You&strategy=fuzzy")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "FAILED: Unexpected Cache Hit" || echo "PASSED"
+        echo ""
+        echo "Testing /findMusic/strategy - Happy Path using Exact Strategy (Cached Result - Expected status: Cache Hit))"
+        RESPONSE=$(curl -s "%{http_code}" "http://localhost:8080/findMusic/strategy?artist=Coldplay&song=Yellow&strategy=exact")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "PASSED" || echo "FAILED: Cache Miss"
+        echo ""
+        echo "Testing /findMusic/strategy - Happy Path using Fuzzy Strategy (Cached Result - Expected status: Cache Hit))"
+        RESPONSE=$(curl -s "%{http_code}" "http://localhost:8080/findMusic/strategy?artist=Coldplay&song=Fix%20You&strategy=fuzzy")
+        echo "Response Body: $RESPONSE"
+        echo "$RESPONSE" | grep -q "Cached" && echo "PASSED" || echo "FAILED: Cache Miss"
+        echo ""
+        echo "Testing /findMusic/strategy - Happy Path using Invalid Strategy (Expected status: 500)"
+        RESPONSE=$(curl -s -o response.txt -w "%{http_code}" "http://localhost:8080/findMusic/strategy?artist=Coldplay&song=Yellow&strategy=invalidStrategy")
+        HTTP_STATUS=${RESPONSE: -3}
+        BODY=$(cat response.txt)
+        echo "Response Body: $BODY"
+        if [ "$HTTP_STATUS" -eq 500 ]; then
+          echo "PASSED"
+        else
+          echo "FAILED: HTTP Status $HTTP_STATUS"
+          exit 1
+        fi
+    
